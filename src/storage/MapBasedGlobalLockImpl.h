@@ -1,7 +1,7 @@
 #ifndef AFINA_STORAGE_MAP_BASED_GLOBAL_LOCK_IMPL_H
 #define AFINA_STORAGE_MAP_BASED_GLOBAL_LOCK_IMPL_H
 
-#include <map>
+#include <unordered_map>
 #include <mutex>
 #include <string>
 
@@ -15,9 +15,36 @@ namespace Backend {
  *
  *
  */
+
+    struct entry{
+        std::string _data;
+        entry* _prev;
+        entry* _next;
+        //std::unordered_map<std::string, entry*>::iterator _key;
+        std::string _key;
+        entry(std::string key = "",
+              std::string data = "",
+              entry* prev = nullptr,
+              entry* next = nullptr
+              /*std::unordered_map<std::string, entry*>::iterator key = nullptr*/) :
+                                                                                _data(data),
+                                                                                _prev(prev),
+                                                                                _next(next),
+                                                                                _key(key){}
+    };
+
+
 class MapBasedGlobalLockImpl : public Afina::Storage {
 public:
-    MapBasedGlobalLockImpl(size_t max_size = 1024) : _max_size(max_size) {}
+    MapBasedGlobalLockImpl(size_t max_size = 1024, size_t curr_size = 0) : _max_size(max_size),
+                                                                            _curr_size(curr_size){
+        _head = new entry();
+        _tail = new entry();
+        _head->_prev = nullptr;
+        _head->_next = _tail;
+        _tail->_prev = _head;
+        _tail->_next = nullptr;
+    }
     ~MapBasedGlobalLockImpl() {}
 
     // Implements Afina::Storage interface
@@ -35,9 +62,16 @@ public:
     // Implements Afina::Storage interface
     bool Get(const std::string &key, std::string &value) const override;
 
+    void MoveToHead(entry* value);
+
+
 private:
+    entry* _head;
+    entry* _tail;
     size_t _max_size;
-    std::map<std::string, std::string> _backend;
+    size_t _curr_size;
+    std::unordered_map</*std::reference_wrapper<const std::string>*/const std::string, entry*,std::hash<std::string>,
+            std::equal_to<std::string>> _backend;
 };
 
 } // namespace Backend
