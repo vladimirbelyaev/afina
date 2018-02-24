@@ -22,11 +22,12 @@ namespace Backend {
         entry* _next;
         //std::unordered_map<std::string, entry*>::iterator _key;
         std::string _key;
+        std::unordered_map<std::string, entry*>::iterator key1;
         entry(std::string key = "",
               std::string data = "",
               entry* prev = nullptr,
               entry* next = nullptr
-              /*std::unordered_map<std::string, entry*>::iterator key = nullptr*/) :
+              ) :
                                                                                 _data(data),
                                                                                 _prev(prev),
                                                                                 _next(next),
@@ -47,6 +48,7 @@ public:
     }
     ~MapBasedGlobalLockImpl() {}
 
+    bool CheckListChain() const;
     // Implements Afina::Storage interface
     bool Put(const std::string &key, const std::string &value) override;
 
@@ -62,15 +64,15 @@ public:
     // Implements Afina::Storage interface
     bool Get(const std::string &key, std::string &value) const override;
 
-    void MoveToHead(entry* value);
+    void MoveToHead(entry* value) const;
 
 
 private:
-    entry* _head;
-    entry* _tail;
+    mutable entry* _head;
+    mutable entry* _tail;
     size_t _max_size;
     size_t _curr_size;
-    std::unordered_map</*std::reference_wrapper<const std::string>*/const std::string, entry*,std::hash<std::string>,
+    std::unordered_map<const std::string, entry*,std::hash<std::string>,
             std::equal_to<std::string>> _backend;
 };
 

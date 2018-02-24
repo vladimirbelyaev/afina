@@ -1,22 +1,42 @@
 #include "MapBasedGlobalLockImpl.h"
 
 #include <mutex>
+#include <iostream>
 
 namespace Afina {
 namespace Backend {
 
 // See MapBasedGlobalLockImpl.h
-void MapBasedGlobalLockImpl::MoveToHead(entry* value){
-        value-> _next-> _prev = value-> _prev;
-        value-> _prev-> _next = value-> _next; // Connect entries where entry is cut from
-        value-> _next = _head->_next;
-        value-> _prev = _head; // Pin entry to head
+void MapBasedGlobalLockImpl::MoveToHead(entry* value) const{
+        //if(value->_prev != _head) {
+            value->_next->_prev = value->_prev;
+            value->_prev->_next = value->_next; // Connect entries where entry is cut from
+            value->_next = _head->_next;
+            value->_prev = _head; // Pin entry to head
+            _head->_next = value; //Pin head to entry
+        //}
         return;
     }
 
+bool MapBasedGlobalLockImpl::CheckListChain() const{
+
+    auto node = _head;
+    while(node-> _next){
+        node = node-> _next;
+    }
+    auto test_one = bool(node == _tail);
+    while(node-> _prev){
+        node = node-> _prev;
+    }
+    auto test_two = bool(node == _head);
+
+    return test_one && test_two;
+
+}
+
 
 bool MapBasedGlobalLockImpl::Put(const std::string &key, const std::string &value) {
-        if(_backend[key]){ // If there is a pointer to node
+        if(_backend.count(key)){ // If there is a pointer to node
             (_backend[key])->_data = value; // Rewrite the value
             MoveToHead(_backend[key]); // LRU implementation
         }else{
@@ -38,14 +58,12 @@ bool MapBasedGlobalLockImpl::Put(const std::string &key, const std::string &valu
                 MoveToHead(node_to_change); //Move to head
             }
         }
-        std::string someval = key;
-        Get(someval,someval);
     return true;
     }
 
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::PutIfAbsent(const std::string &key, const std::string &value) {
-        if(!(_backend[key])){
+        if(!(_backend.count(key))){
             if (!(_curr_size == _max_size)){/* LRU: create new node, pin to head, put key-pointer into map */
                 entry* new_node = new entry(key, value, _head, _head->_next);
                 _head-> _next-> _prev = new_node;
@@ -94,8 +112,8 @@ bool MapBasedGlobalLockImpl::Delete(const std::string &key) {
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::Get(const std::string &key, std::string &value) const {
         if(_backend.count(key)){
-           value = _backend.find(key)->second ->_data;
-            //MoveToHead(_backend.find(key)->second); //Should be, but const class?
+            value = _backend.find(key)->second ->_data;
+            MoveToHead(_backend.find(key)->second); //Should be, but const class?
             return true;
         }
         return false;
