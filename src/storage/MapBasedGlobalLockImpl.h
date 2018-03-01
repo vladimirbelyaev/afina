@@ -6,6 +6,7 @@
 #include <string>
 
 #include <afina/Storage.h>
+#include <condition_variable>
 
 namespace Afina {
 namespace Backend {
@@ -22,29 +23,33 @@ namespace Backend {
         entry* _next;
         //std::unordered_map<std::string, entry*>::iterator _key;
         std::string _key;
+        size_t _bucket_pos;
         std::unordered_map<std::string, entry*>::iterator key1;
         entry(std::string key = "",
               std::string data = "",
               entry* prev = nullptr,
-              entry* next = nullptr
+              entry* next = nullptr,
+              size_t bucket_pos = -1
               ) :
                                                                                 _data(data),
                                                                                 _prev(prev),
                                                                                 _next(next),
-                                                                                _key(key){}
+                                                                                _key(key),
+                                                                                _bucket_pos(bucket_pos){}
     };
 
 
 class MapBasedGlobalLockImpl : public Afina::Storage {
 public:
-    MapBasedGlobalLockImpl(size_t max_size = 1024, size_t curr_size = 0) : _max_size(max_size),
-                                                                            _curr_size(curr_size){
+    MapBasedGlobalLockImpl(size_t max_size = 1024, bool type = true) : _max_size(max_size),
+                                                                _type(type){
         _head = new entry();
         _tail = new entry();
         _head->_prev = nullptr;
         _head->_next = _tail;
         _tail->_prev = _head;
         _tail->_next = nullptr;
+        _curr_size = 0;
     }
     ~MapBasedGlobalLockImpl() {}
 
@@ -66,14 +71,20 @@ public:
 
     void MoveToHead(entry* value) const;
 
+    bool FreeCache(const size_t& input_size);
+
+    size_t SizeOfNode(const std::string &key, const std::string &value, const bool type) const;
+
 
 private:
+    bool _type = false;
     mutable entry* _head;
     mutable entry* _tail;
     size_t _max_size;
     size_t _curr_size;
     std::unordered_map<const std::string, entry*,std::hash<std::string>,
             std::equal_to<std::string>> _backend;
+    mutable std::recursive_mutex m;
 };
 
 } // namespace Backend
