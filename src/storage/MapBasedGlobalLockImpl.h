@@ -21,21 +21,15 @@ namespace Backend {
         std::string _data;
         entry* _prev;
         entry* _next;
-        //std::unordered_map<std::string, entry*>::iterator _key;
-        std::string _key;
-        size_t _bucket_pos;
-        std::unordered_map<std::string, entry*>::iterator key1;
-        entry(std::string key = "",
+        std::unordered_map<std::string, entry*>::iterator _key_iterator;
+        entry(
               std::string data = "",
               entry* prev = nullptr,
-              entry* next = nullptr,
-              size_t bucket_pos = -1
+              entry* next = nullptr
               ) :
                                                                                 _data(data),
                                                                                 _prev(prev),
-                                                                                _next(next),
-                                                                                _key(key),
-                                                                                _bucket_pos(bucket_pos){}
+                                                                                _next(next){}
     };
 
 
@@ -74,6 +68,8 @@ public:
     bool FreeCache(const size_t& input_size);
 
     size_t SizeOfNode(const std::string &key, const std::string &value, const bool type) const;
+
+    bool Delete(const std::unordered_map<std::string, entry*>::iterator);
 
 
 private:

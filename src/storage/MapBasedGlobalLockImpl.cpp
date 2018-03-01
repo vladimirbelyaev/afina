@@ -42,7 +42,7 @@ bool MapBasedGlobalLockImpl::FreeCache(const size_t& input_size){
     if(input_size > _max_size)
         return false;
     while(_curr_size + input_size > _max_size){
-        auto key_to_delete = _tail->_prev->_key;
+        auto key_to_delete = _tail->_prev->_key_iterator;
         Delete(key_to_delete);
     }
     return true;
@@ -64,10 +64,11 @@ bool MapBasedGlobalLockImpl::PutIfAbsent(const std::string &key, const std::stri
                 return false;
             // We have memory
             /* LRU: create new node, pin to head, put key-pointer into map */
-            entry* new_node = new entry(key, value, _head, _head->_next, _backend.bucket(key));
+            entry* new_node = new entry(/*key,*/ value, _head, _head->_next);
             _head-> _next-> _prev = new_node;
             _head-> _next = new_node;
-            _backend[new_node->_key] = new_node;
+            _backend[key] = new_node;
+            new_node ->_key_iterator = _backend.find(key);
             _curr_size += SizeOfNode(key, value, _type);
             return true;
         }else return false;
@@ -84,6 +85,9 @@ bool MapBasedGlobalLockImpl::Set(const std::string &key, const std::string &valu
                 return false;
             _backend[key]->_data = value;
             _curr_size += SizeOfNode(key,value,_type) - SizeOfNode(key,_backend[key]->_data,_type);
+            //TEST
+            _backend[key]->_key_iterator = _backend.find(key);
+            //TEST
             return true;
         }
         return false;
@@ -104,12 +108,17 @@ bool MapBasedGlobalLockImpl::Delete(const std::string &key) {
         return true;
     }
 
+bool MapBasedGlobalLockImpl::Delete(const std::unordered_map<std::string, entry*>::iterator it){
+    std::lock_guard<std::recursive_mutex> lk(m);
+    return Delete(it->first);
+}
+
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::Get(const std::string &key, std::string &value) const {
         std::lock_guard<std::recursive_mutex> lk(m);
         if(_backend.count(key)){
             value = _backend.find(key)->second ->_data;
-            MoveToHead(_backend.find(key)->second); //Should be, but const class?
+            MoveToHead(_backend.find(key)->second);
             return true;
         }
         return false;
