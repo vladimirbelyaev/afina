@@ -21,7 +21,7 @@ namespace Backend {
         std::string _data;
         entry* _prev;
         entry* _next;
-        std::unordered_map<std::string, entry*>::iterator _key_iterator;
+        const std::string* _key_pointer;
         entry(
               std::string data = "",
               entry* prev = nullptr,
@@ -69,8 +69,7 @@ public:
 
     size_t SizeOfNode(const std::string &key, const std::string &value, const bool type) const;
 
-    bool Delete(const std::unordered_map<std::string, entry*>::iterator);
-
+    bool Delete(const std::string* key);
 
 private:
     bool _type = false;

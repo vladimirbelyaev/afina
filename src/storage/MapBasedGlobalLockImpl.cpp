@@ -42,7 +42,7 @@ bool MapBasedGlobalLockImpl::FreeCache(const size_t& input_size){
     if(input_size > _max_size)
         return false;
     while(_curr_size + input_size > _max_size){
-        auto key_to_delete = _tail->_prev->_key_iterator;
+        auto key_to_delete = _tail->_prev->_key_pointer;
         Delete(key_to_delete);
     }
     return true;
@@ -59,16 +59,16 @@ bool MapBasedGlobalLockImpl::Put(const std::string &key, const std::string &valu
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::PutIfAbsent(const std::string &key, const std::string &value) {
         std::lock_guard<std::recursive_mutex> lk(m);
-        if(!(_backend.count(key))){
+        if(_backend.find(key)==_backend.end()){
             if(!FreeCache(SizeOfNode(key,value,_type)))
                 return false;
             // We have memory
             /* LRU: create new node, pin to head, put key-pointer into map */
-            entry* new_node = new entry(/*key,*/ value, _head, _head->_next);
+            entry* new_node = new entry(value, _head, _head->_next);
             _head-> _next-> _prev = new_node;
             _head-> _next = new_node;
             _backend[key] = new_node;
-            new_node ->_key_iterator = _backend.find(key);
+            new_node ->_key_pointer = &(_backend.find(key)->first);
             _curr_size += SizeOfNode(key, value, _type);
             return true;
         }else return false;
@@ -79,14 +79,16 @@ bool MapBasedGlobalLockImpl::PutIfAbsent(const std::string &key, const std::stri
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::Set(const std::string &key, const std::string &value) {
         std::lock_guard<std::recursive_mutex> lk(m);
-        if(_backend.count(key)){
-            MoveToHead(_backend[key]);
-            if(!FreeCache(SizeOfNode(key,value,_type) - SizeOfNode(key,_backend[key]->_data,_type)))
+        auto node = _backend.find(key);
+        if(node != _backend.end()){
+            MoveToHead(node->second);
+            if(!FreeCache(SizeOfNode(key,value,_type) - SizeOfNode(key,node->second->_data,_type)))
                 return false;
-            _backend[key]->_data = value;
-            _curr_size += SizeOfNode(key,value,_type) - SizeOfNode(key,_backend[key]->_data,_type);
+            node->second->_data = value;
+            _curr_size += SizeOfNode(key,value,_type) - SizeOfNode(key,node->second->_data,_type);
             //TEST
-            _backend[key]->_key_iterator = _backend.find(key);
+            node->second->_key_pointer = &(node->first);
+
             //TEST
             return true;
         }
@@ -96,29 +98,30 @@ bool MapBasedGlobalLockImpl::Set(const std::string &key, const std::string &valu
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::Delete(const std::string &key) {
         std::lock_guard<std::recursive_mutex> lk(m);
-        if(_backend.count(key)){
-            auto node_to_delete = _backend[key];
-            _curr_size -= SizeOfNode(key, _backend[key]->_data, _type);
+        auto pair_to_delete = _backend.find(key);
+        if(pair_to_delete != _backend.end()){
+            _curr_size -= SizeOfNode(key, pair_to_delete->second->_data, _type);
             _backend.erase(key);
-            node_to_delete-> _next-> _prev = node_to_delete-> _prev;
-            node_to_delete-> _prev-> _next = node_to_delete-> _next;
-            delete node_to_delete;
+            pair_to_delete->second-> _next-> _prev = pair_to_delete->second-> _prev;
+            pair_to_delete->second-> _prev-> _next = pair_to_delete->second-> _next;
+            delete pair_to_delete->second;
             return true;
         }
-        return true;
+        return false;
     }
 
-bool MapBasedGlobalLockImpl::Delete(const std::unordered_map<std::string, entry*>::iterator it){
+bool MapBasedGlobalLockImpl::Delete(const std::string* key){
     std::lock_guard<std::recursive_mutex> lk(m);
-    return Delete(it->first);
-}
+    return Delete(*key);
+    }
 
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::Get(const std::string &key, std::string &value) const {
         std::lock_guard<std::recursive_mutex> lk(m);
-        if(_backend.count(key)){
-            value = _backend.find(key)->second ->_data;
-            MoveToHead(_backend.find(key)->second);
+        auto pair = _backend.find(key);
+        if(pair != _backend.end()){
+            value = pair->second ->_data;
+            MoveToHead(pair->second);
             return true;
         }
         return false;

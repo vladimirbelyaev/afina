@@ -178,3 +178,13 @@ TEST(StorageTest, TestRefill){
     EXPECT_FALSE(storage.Get("KEY1", value));
     EXPECT_TRUE(value == "valvalval");
 }
+
+TEST(StorageTest, TestNoMem){
+    MapBasedGlobalLockImpl storage(10);
+    std::string val;
+    EXPECT_FALSE(storage.Put("LONGKEY","LONGVAL"));
+    EXPECT_TRUE(storage.Put("SHKEY","SHVAL"));
+    EXPECT_FALSE(storage.Get("LONGKEY",val));
+    EXPECT_TRUE(storage.Get("SHKEY",val));
+    EXPECT_TRUE(storage.Delete("SHKEY"));
+}
