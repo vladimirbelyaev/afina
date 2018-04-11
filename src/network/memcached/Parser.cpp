@@ -19,15 +19,15 @@ bool Parser::Parse(const char *input, const size_t size, size_t &parsed) {
     size_t pos;
     bool negative;
     std::string curKey;
-
+    std::cout << "PARSING\n";
     bytes = 0;
     bool parse_complete = false;
     for (pos = 0; pos < size && !parse_complete; pos++) {
         char c = input[pos];
-
+        std::cout << "Curr state is " << state;
         switch (state) {
         case State::sName: {
-            if (c == ' ') {
+            if (c == ' '|| c == '\r' || c == '\n') {
                 // std::cout << "parser debug: name='" << name << "'" << std::endl;
                 if (name == "set" || name == "add" || name == "append" || name == "prepend") {
                     state = State::spKey;
@@ -54,7 +54,7 @@ bool Parser::Parse(const char *input, const size_t size, size_t &parsed) {
         }
 
         case State::sgKey: {
-            if (c == '\r') {
+            if (c == '\r' || c == '\n') {
                 keys.push_back(curKey);
                 // std::cout << "parser debug: total '" << keys.size() << " keys" << std::endl;
 

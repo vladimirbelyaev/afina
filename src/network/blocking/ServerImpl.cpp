@@ -43,8 +43,9 @@ void *ServerImpl::RunConnectionProxy(void *p){
         server->RunConnection(socket);
     } catch (std::runtime_error &err) {
         std::cerr << "Server fails: " << err.what() << std::endl;
+        close(socket);
     }
-    close(socket);
+
     {
         std::lock_guard<std::mutex> lock(server->connections_mutex);
         server->connections.erase(pthread_self());
@@ -226,6 +227,7 @@ void ServerImpl::RunConnection(int socket) {
     ssize_t n_read;
     while(running.load() && stable) {
         try {
+            std::cout << "A\n";
             n_read = recv(socket, buffer, buf_size, 0);
             buffer[buf_size]='\0';
             std::cout << "READ "<< n_read <<" " << buffer << std::endl;
@@ -240,8 +242,10 @@ void ServerImpl::RunConnection(int socket) {
             }
             query.append(buffer, n_read);
             curr_pos += n_read;
+            std::cout << "B\n";
             // Check if command is parsed
             while(!parser.Parse(query.c_str(), curr_pos, parsed)) {
+                std::cout <<"C\n";
                 memset(buffer, 0, buf_size);
                 n_read = recv(socket, buffer, buf_size, 0);
                 if(n_read <= 0) {
@@ -256,6 +260,7 @@ void ServerImpl::RunConnection(int socket) {
             auto cmd = parser.Build(body_size);
             char cmdbuf[body_size+1];
             std::string body = query.substr(parsed, n_read - parsed);
+            std::cout << "D\n";
             if (body_size > 0 && (n_read = recv(socket, cmdbuf, body_size - body.size(), 0)) <= 0) {
                 throw std::runtime_error("Socket recv() failed");
             }
@@ -271,9 +276,7 @@ void ServerImpl::RunConnection(int socket) {
             }
             // Now we should leave in query variable the only data which is not used for query
             query = query.substr(parsed, n_read - parsed);
-            if (send(socket, out.data(), out.size(), 0) <= 0) {
-                throw std::runtime_error("Socket send() failed");
-            }
+
             parser.Reset();
             memset(buffer,'\0',buf_size);
             //
@@ -281,6 +284,10 @@ void ServerImpl::RunConnection(int socket) {
             out = std::string("SERVER_ERROR : ") + err.what() + "\r\n";
             stable = false;
         }
+        if (send(socket, out.data(), out.size(), 0) <= 0) {
+            throw std::runtime_error("Socket send() failed");
+        }
+        std::cout <<"E\n";
     }
         std::cout << "Socket is empty. Disconnecting..." << std::endl;
     // TODO: All connection work is here
