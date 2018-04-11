@@ -218,7 +218,7 @@ void ServerImpl::RunAcceptor() {
 void ServerImpl::RunConnection(int socket) {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
     Protocol::Parser parser;
-    char buffer[buf_size];
+    char buffer[buf_size+1];
     std::string out;
     size_t parsed = 0;
     bool stable = true;
@@ -227,6 +227,7 @@ void ServerImpl::RunConnection(int socket) {
     while(running.load() && stable) {
         try {
             n_read = recv(socket, buffer, buf_size, 0);
+            buffer[buf_size]='\0';
             std::cout << "READ "<< n_read <<" " << buffer << std::endl;
             if (n_read == 0){
                 close(socket);
@@ -240,7 +241,7 @@ void ServerImpl::RunConnection(int socket) {
             query.append(buffer, n_read);
             curr_pos += n_read;
             // Check if command is parsed
-            while(!parser.Parse(query.c_str(), curr_pos, parsed)){
+            while(!parser.Parse(query.c_str(), curr_pos, parsed)) {
                 memset(buffer, 0, buf_size);
                 n_read = recv(socket, buffer, buf_size, 0);
                 if(n_read <= 0) {
