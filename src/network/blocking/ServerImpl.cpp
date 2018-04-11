@@ -18,6 +18,8 @@
 #include <unistd.h>
 
 #include <afina/Storage.h>
+#include <protocol/Parser.h>
+#include <afina/execute/Command.h>
 
 namespace Afina {
 namespace Network {
@@ -31,6 +33,23 @@ void *ServerImpl::RunAcceptorProxy(void *p) {
         std::cerr << "Server fails: " << ex.what() << std::endl;
     }
     return 0;
+}
+
+void *ServerImpl::RunConnectionProxy(void *p){
+    ServerImpl* server;
+    int socket;
+    std::tie(server, socket) = *reinterpret_cast<std::pair<ServerImpl*, int>*>(p);
+    try {
+        server->RunConnection(socket);
+    } catch (std::runtime_error &err) {
+        std::cerr << "Server fails: " << err.what() << std::endl;
+    }
+    close(socket);
+    {
+        std::lock_guard<std::mutex> lock(server->connections_mutex);
+        server->connections.erase(pthread_self());
+    }
+    return nullptr;
 }
 
 // See Server.h
@@ -169,16 +188,25 @@ void ServerImpl::RunAcceptor() {
             close(server_socket);
             throw std::runtime_error("Socket accept() failed");
         }
-
-        // TODO: Start new thread and process data from/to connection
         {
-            std::string msg = "TODO: start new thread and process memcached protocol instead";
-            if (send(client_socket, msg.data(), msg.size(), 0) <= 0) {
+            std::lock_guard<std::mutex> lock(connections_mutex);
+            if (connections.size() >= max_workers) {
+                std::string msg = "Too many workers\n";
+                if (send(client_socket, msg.data(), msg.size(), 0) <= 0) {
+                    close(client_socket);
+                    close(server_socket);
+                    throw std::runtime_error("Socket send() failed");
+                }
                 close(client_socket);
-                close(server_socket);
-                throw std::runtime_error("Socket send() failed");
+            } else {
+                pthread_t worker;
+                auto args = std::make_pair(this, client_socket);
+                if (pthread_create(&worker, NULL, ServerImpl::RunConnectionProxy, &args) != 0) {
+                    throw std::runtime_error("Thread create() failed");
+                }
+                connections.insert(worker);
+                std::cout << "User " << connections.size()-1 << " connected\n";
             }
-            close(client_socket);
         }
     }
 
@@ -187,8 +215,73 @@ void ServerImpl::RunAcceptor() {
 }
 
 // See Server.h
-void ServerImpl::RunConnection() {
+void ServerImpl::RunConnection(int socket) {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
+    Protocol::Parser parser;
+    char buffer[buf_size];
+    std::string out;
+    size_t parsed = 0;
+    bool stable = true;
+    size_t curr_pos = 0;
+    ssize_t n_read;
+    while(running.load() && stable) {
+        try {
+            n_read = recv(socket, buffer, buf_size, 0);
+            std::cout << "READ "<< n_read <<" " << buffer << std::endl;
+            if (n_read == 0){
+                close(socket);
+                throw std::runtime_error("Socket is closed");
+            }
+            std::string query; // Input parsed
+            if (n_read < 0){
+                close(socket);
+                throw std::runtime_error("Socket is closed");
+            }
+            query.append(buffer, n_read);
+            curr_pos += n_read;
+            // Check if command is parsed
+            while(!parser.Parse(query.c_str(), curr_pos, parsed)){
+                memset(buffer, 0, buf_size);
+                n_read = recv(socket, buffer, buf_size, 0);
+                if(n_read <= 0) {
+                    break;
+                }
+                query.append(buffer, n_read);
+                curr_pos += n_read;
+                parser.Reset();
+            }
+            //We parsed the command
+            uint32_t body_size;
+            auto cmd = parser.Build(body_size);
+            char cmdbuf[body_size+1];
+            std::string body = query.substr(parsed, n_read - parsed);
+            if (body_size > 0 && (n_read = recv(socket, cmdbuf, body_size - body.size(), 0)) <= 0) {
+                throw std::runtime_error("Socket recv() failed");
+            }
+            cmdbuf[body_size]='\0';
+            std::cout << "BODY ["<<body<<"]"<<"\n";
+            std::cout << "BUF ["<<cmdbuf<<"]"<<n_read <<"\n";
+            body = body.append(cmdbuf,n_read);
+            try {
+                cmd->Execute(*pStorage, query.append(cmdbuf), out);
+                out += "\r\n";
+            } catch (std::runtime_error& e) {
+                out = std::string("SERVER_ERROR : ") + e.what() + "\r\n";
+            }
+            // Now we should leave in query variable the only data which is not used for query
+            query = query.substr(parsed, n_read - parsed);
+            if (send(socket, out.data(), out.size(), 0) <= 0) {
+                throw std::runtime_error("Socket send() failed");
+            }
+            parser.Reset();
+            memset(buffer,'\0',buf_size);
+            //
+        } catch (std::runtime_error &err) {
+            out = std::string("SERVER_ERROR : ") + err.what() + "\r\n";
+            stable = false;
+        }
+    }
+        std::cout << "Socket is empty. Disconnecting..." << std::endl;
     // TODO: All connection work is here
 }
 
