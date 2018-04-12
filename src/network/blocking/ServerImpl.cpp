@@ -42,10 +42,10 @@ void *ServerImpl::RunConnectionProxy(void *p){
     try {
         server->RunConnection(socket);
     } catch (std::runtime_error &err) {
-        std::cerr << "Server fails: " << err.what() << std::endl;
+        std::cout << "Connection interrupt: " << err.what() << std::endl;
         close(socket);
     }
-
+    std::cout << "\nDisconnecting\n";
     {
         std::lock_guard<std::mutex> lock(server->connections_mutex);
         server->connections.erase(pthread_self());
@@ -206,7 +206,7 @@ void ServerImpl::RunAcceptor() {
                     throw std::runtime_error("Thread create() failed");
                 }
                 connections.insert(worker);
-                std::cout << "User " << connections.size()-1 << " connected\n";
+                std::cout << "\n" << "\nUser " << connections.size()-1 << " connected\n"<< '\n';
             }
         }
     }
@@ -220,19 +220,103 @@ void ServerImpl::RunConnection(int socket) {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
     Protocol::Parser parser;
     char buffer[buf_size+1];
+    bool is_cmd = false;
     std::string out;
     size_t parsed = 0;
-    bool stable = true;
     size_t curr_pos = 0;
     ssize_t n_read;
-    while(running.load() && stable) {
+    //try {
+        while (running.load()) { // Loop for reading
+            n_read = 0;
+            std::cout << "Start of loop\n";
+            do {
+                parser.Reset(); // Сбросим парсер
+                std::cout << "IN recv()\n";
+                // Читаем, пока не начитаемся. Если сокет закрылся - выкинем.
+                std::cout << "recv()ed\n";
+                if (n_read < 0){
+                    throw std::runtime_error("\nUser disconnected\n");
+                }
+                curr_pos += n_read;
+                std::cout << "Pos = " << curr_pos << " data =[" << buffer <<"]\n";
+            } while (!(is_cmd = parser.Parse(buffer, curr_pos, parsed)) && (n_read = recv(socket, buffer + curr_pos, buf_size, 0)) > 0);
+            std::cout << "Curr nread " << n_read << std::endl;
+            if (n_read <= 0){
+                throw std::runtime_error("\nUser disconnected\n");
+            }
+            std::cout << "Parsed\n";
+            uint32_t body_size = 0;
+            size_t body_read = curr_pos - parsed;//body_read - сколько дочитали
+            auto cmd = parser.Build(body_size);// Узнали размер body, сделали команду
+            // Очистим все, что не нужно.
+            memcpy(buffer, buffer + parsed, body_read);
+            memset(buffer + body_read, 0, parsed); // Убираем все, что было связано с командой.
+
+            // Теперь работаем с аргументами
+            curr_pos = body_read;
+            while (body_size > curr_pos){
+                n_read = recv(socket, buffer + curr_pos, buf_size, 0);
+                curr_pos += n_read;
+                if (n_read < 0){
+                    throw std::runtime_error("\nUser disconnected\n");
+                }
+            }
+            std::cout << "Got someBody\n";
+            // Допустим, прочитали. Теперь запустим.
+            char args[body_size + 1];
+            memcpy(args, buffer, body_size);
+            args[body_size] = '\0';
+            std::cout << "Executing\n";
+            if (is_cmd){
+                        cmd->Execute(*pStorage, args, out);
+                        std::cout << "Executed\n";
+                        out += "\r\n";
+                        //Почистим память опять(остатки аргумента и \r\n
+                        if (body_size) {
+                            memcpy(buffer, buffer + body_size + 2, curr_pos - body_size - 2);
+                            //std::cout << "Debug: CurrBytes are [" << buffer << "]\n";
+                            memset(buffer + curr_pos - body_size - 2, 0, body_size);
+                            curr_pos -= body_size + 2;
+                        }
+                        //std::cout << "Debug: CurrBytes are [" << buffer << "]\n";
+                        std::cout << "Pos before deleting data: " << curr_pos;
+                        //curr_pos -= body_size + 2;
+                        std::cout << "Sending\n";
+                        if (send(socket, out.data(), out.size(), 0) <= 0) {
+                            throw std::runtime_error("Socket send() failed");
+                        }
+                }
+            parser.Reset();
+            is_cmd = false;
+            std::cout << "Sent\n";
+        }
+    /*}catch (std::runtime_error &err){
+        out = std::string("SERVER_ERROR : ") + err.what() + "\r\n";
+        close(socket);
+        std::cout << "\nDisconnecting...\n";
+        if (send(socket, out.data(), out.size(), 0) <= 0) {
+            throw std::runtime_error("Socket send() failed");
+        }
+    }*/
+
+        /*
+            try {
+                n_read = recv(socket, buffer, buf_size, 0); //Reading data
+                while(!parser.Parse(buffer, curr_pos, parsed)){
+                    std::cout <<"Didn't parse yet\n";
+                }
+            }catch (std::runtime_error &err){
+
+            }
+        }*/
+        /*while(running.load() && stable) {
         try {
             std::cout << "A\n";
             n_read = recv(socket, buffer, buf_size, 0);
-            buffer[buf_size]='\0';
+            buffer[n_read]='\0';
             std::cout << "READ "<< n_read <<" " << buffer << std::endl;
             if (n_read == 0){
-                close(socket);
+                //close(socket);
                 throw std::runtime_error("Socket is closed");
             }
             std::string query; // Input parsed
@@ -264,7 +348,7 @@ void ServerImpl::RunConnection(int socket) {
             if (body_size > 0 && (n_read = recv(socket, cmdbuf, body_size - body.size(), 0)) <= 0) {
                 throw std::runtime_error("Socket recv() failed");
             }
-            cmdbuf[body_size]='\0';
+            cmdbuf[n_read]='\0';
             std::cout << "BODY ["<<body<<"]"<<"\n";
             std::cout << "BUF ["<<cmdbuf<<"]"<<n_read <<"\n";
             body = body.append(cmdbuf,n_read);
@@ -289,7 +373,8 @@ void ServerImpl::RunConnection(int socket) {
         }
         std::cout <<"E\n";
     }
-        std::cout << "Socket is empty. Disconnecting..." << std::endl;
+        std::cout << "Socket is empty. Disconnecting..." << std::endl;*/
+
     // TODO: All connection work is here
 }
 

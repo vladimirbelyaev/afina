@@ -75,7 +75,7 @@ private:
     // access only from inside of accept_thread
     std::unordered_set<pthread_t> connections;
 
-    const ssize_t buf_size = 2;
+    const ssize_t buf_size = 1024;
 };
 
 } // namespace Blocking
