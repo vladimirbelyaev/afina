@@ -220,13 +220,53 @@ void ServerImpl::RunConnection(int socket) {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
     Protocol::Parser parser;
     char buffer[buf_size+1];
-    bool is_cmd = false;
     std::string out;
     size_t parsed = 0;
     size_t curr_pos = 0;
-    ssize_t n_read;
+    ssize_t n_read = 0;
     //try {
-        while (running.load()) { // Loop for reading
+        while (running.load()) {
+            std::cout << "Start of loop\n";
+            while ((n_read = recv(socket, buffer + curr_pos, buf_size, 0)) > 0 || parsed < curr_pos){
+                curr_pos += n_read;
+                bool is_parsed = parser.Parse(buffer, curr_pos, parsed);
+                if (is_parsed){
+                    size_t body_read = curr_pos - parsed;//body_read - сколько дочитали
+                    memcpy(buffer, buffer + parsed, body_read);
+                    memset(buffer + body_read, 0, parsed); // Убираем все, что было связано с командой.
+                    curr_pos = body_read;
+
+                    //Сбор команды и аргументов
+                    uint32_t body_size;
+                    auto cmd = parser.Build(body_size);
+                    while (body_size > curr_pos){
+                        n_read = recv(socket, buffer + curr_pos, buf_size, 0);
+                        curr_pos += n_read;
+                        if (n_read < 0){
+                            throw std::runtime_error("\nUser disconnected\n");
+                        }
+                    }
+                    char args[body_size + 1];
+                    memcpy(args, buffer, body_size);
+                    args[body_size] = '\0';
+                    cmd->Execute(*pStorage, args, out);
+                    out += "\r\n";
+                    if (body_size) {
+                        memcpy(buffer, buffer + body_size + 2, curr_pos - body_size - 2);
+                        memset(buffer + curr_pos - body_size - 2, 0, body_size);
+                        curr_pos -= body_size + 2;
+                    }
+                    if (send(socket, out.data(), out.size(), 0) <= 0) {
+                        throw std::runtime_error("Socket send() failed\n");
+                    }
+                    parser.Reset();
+                    }
+            }
+            throw std::runtime_error("User disconnected\n");
+
+        }
+        // Передана команда на остановку сервера
+            /*// Loop for reading
             n_read = 0;
             std::cout << "Start of loop\n";
             do {
@@ -239,7 +279,7 @@ void ServerImpl::RunConnection(int socket) {
                 }
                 curr_pos += n_read;
                 std::cout << "Pos = " << curr_pos << " data =[" << buffer <<"]\n";
-            } while (!(is_cmd = parser.Parse(buffer, curr_pos, parsed)) && (n_read = recv(socket, buffer + curr_pos, buf_size, 0)) > 0);
+            } while (!parser.Parse(buffer, curr_pos, parsed) && (n_read = recv(socket, buffer + curr_pos, buf_size, 0)) > 0);
             std::cout << "Curr nread " << n_read << std::endl;
             if (n_read <= 0){
                 throw std::runtime_error("\nUser disconnected\n");
@@ -267,29 +307,22 @@ void ServerImpl::RunConnection(int socket) {
             memcpy(args, buffer, body_size);
             args[body_size] = '\0';
             std::cout << "Executing\n";
-            if (is_cmd){
-                        cmd->Execute(*pStorage, args, out);
-                        std::cout << "Executed\n";
-                        out += "\r\n";
-                        //Почистим память опять(остатки аргумента и \r\n
-                        if (body_size) {
-                            memcpy(buffer, buffer + body_size + 2, curr_pos - body_size - 2);
-                            //std::cout << "Debug: CurrBytes are [" << buffer << "]\n";
-                            memset(buffer + curr_pos - body_size - 2, 0, body_size);
-                            curr_pos -= body_size + 2;
-                        }
-                        //std::cout << "Debug: CurrBytes are [" << buffer << "]\n";
-                        std::cout << "Pos before deleting data: " << curr_pos;
-                        //curr_pos -= body_size + 2;
-                        std::cout << "Sending\n";
-                        if (send(socket, out.data(), out.size(), 0) <= 0) {
-                            throw std::runtime_error("Socket send() failed");
-                        }
-                }
+            cmd->Execute(*pStorage, args, out);
+            std::cout << "Executed\n";
+            out += "\r\n";
+            //Почистим память опять(остатки аргумента и \r\n
+            if (body_size) {
+                memcpy(buffer, buffer + body_size + 2, curr_pos - body_size - 2);
+                memset(buffer + curr_pos - body_size - 2, 0, body_size);
+                curr_pos -= body_size + 2;
+            }
+            if (send(socket, out.data(), out.size(), 0) <= 0) {
+                throw std::runtime_error("Socket send() failed");
+            }
+
             parser.Reset();
-            is_cmd = false;
             std::cout << "Sent\n";
-        }
+        }*/
     /*}catch (std::runtime_error &err){
         out = std::string("SERVER_ERROR : ") + err.what() + "\r\n";
         close(socket);
