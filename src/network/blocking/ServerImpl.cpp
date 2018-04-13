@@ -116,7 +116,7 @@ void ServerImpl::Stop() {
 // See Server.h
 void ServerImpl::Join() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
-    pthread_join(accept_thread, 0);
+    pthread_join(accept_thread, nullptr);
 }
 
 // See Server.h
@@ -249,8 +249,15 @@ void ServerImpl::RunConnection(int socket) {
                     char args[body_size + 1];
                     memcpy(args, buffer, body_size);
                     args[body_size] = '\0';
-                    cmd->Execute(*pStorage, args, out);
-                    out += "\r\n";
+
+                    // Запускаем
+                    try{
+                        cmd->Execute(*pStorage, args, out);
+                        out += "\r\n";
+                    }catch(std::runtime_error &err){ // Ошибка внутри поймается и отправится клиенту
+                        out = std::string("SERVER_ERROR : ") + err.what() + "\r\n";
+                    }
+
                     if (body_size) {
                         memcpy(buffer, buffer + body_size + 2, curr_pos - body_size - 2);
                         memset(buffer + curr_pos - body_size - 2, 0, body_size);
@@ -265,7 +272,7 @@ void ServerImpl::RunConnection(int socket) {
             throw std::runtime_error("User disconnected\n");
 
         }
-        // Передана команда на остановку сервера
+        // Передана команда на остановку сервера. Что делаем?
             /*// Loop for reading
             n_read = 0;
             std::cout << "Start of loop\n";
