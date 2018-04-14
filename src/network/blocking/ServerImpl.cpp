@@ -195,10 +195,16 @@ void ServerImpl::RunAcceptor() {
                 std::string msg = "Too many workers\n";
                 if (send(client_socket, msg.data(), msg.size(), 0) <= 0) {
                     close(client_socket);
-                    close(server_socket);
-                    throw std::runtime_error("Socket send() failed");
+                    // Считаем, что юзер в таком случае сам пенек и успел отключиться.
+                    std::cout << "Socket send() failed\n";
+
+                    //close(server_socket);
+                    //throw std::runtime_error("Socket send() failed");
                 }
-                close(client_socket);
+                else {
+                    close(client_socket);
+                    std::cout << "User has been disconnected due to workers overflow\n";
+                }
             } else {
                 pthread_t worker;
                 auto args = std::make_pair(this, client_socket);
@@ -210,7 +216,6 @@ void ServerImpl::RunAcceptor() {
             }
         }
     }
-
     // Cleanup on exit...
     close(server_socket);
 }
@@ -224,13 +229,65 @@ void ServerImpl::RunConnection(int socket) {
     size_t parsed = 0;
     size_t curr_pos = 0;
     ssize_t n_read = 0;
+    bool serv_disconnect = false;
     //try {
-        while (running.load()) {
-            std::cout << "Start of loop\n";
-            while ((n_read = recv(socket, buffer + curr_pos, buf_size, 0)) > 0 || parsed < curr_pos){
-                curr_pos += n_read;
+        if(!running.load()) return;
+
+        std::cout << "Start of loop\n";
+        while ((n_read = recv(socket, buffer + curr_pos, buf_size, 0)) > 0 || parsed < curr_pos) {
+            curr_pos += n_read;
+            bool is_parsed = parser.Parse(buffer, curr_pos, parsed);
+            if (is_parsed) {
+                size_t body_read = curr_pos - parsed;//body_read - сколько дочитали
+                memcpy(buffer, buffer + parsed, body_read);
+                memset(buffer + body_read, 0, parsed); // Убираем все, что было связано с командой.
+                curr_pos = body_read;
+
+                //Сбор команды и аргументов
+                uint32_t body_size;
+                auto cmd = parser.Build(body_size);
+                while (body_size > curr_pos) {
+                    n_read = recv(socket, buffer + curr_pos, buf_size, 0);
+                    curr_pos += n_read;
+                    if (n_read < 0) {
+                        throw std::runtime_error("\nUser disconnected\n");
+                    }
+                }
+                char args[body_size + 1];
+                memcpy(args, buffer, body_size);
+                args[body_size] = '\0';
+
+                // Запускаем
+                try {
+                    cmd->Execute(*pStorage, args, out);
+                    out += "\r\n";
+                } catch (std::runtime_error &err) { // Ошибка внутри поймается и отправится клиенту
+                    out = std::string("SERVER_ERROR : ") + err.what() + "\r\n";
+                }
+
+                if (body_size) {
+                    memcpy(buffer, buffer + body_size + 2, curr_pos - body_size - 2);
+                    memset(buffer + curr_pos - body_size - 2, 0, body_size);
+                    curr_pos -= body_size + 2;
+                }
+                if (send(socket, out.data(), out.size(), 0) <= 0) {
+                    throw std::runtime_error("Socket send() failed\n");
+                }
+                parser.Reset();
+
+            }
+            if (!running.load()) {
+                serv_disconnect = true;
+                break;
+            }
+        }
+
+        // Сюда можно выйти по двум причинам - либо не выполняется условие(т.е. пользователь отсоединился), либо
+        // если сервер затормозил.
+        if (serv_disconnect) { // Те же команды, только recv удаляем
+            while (parsed < curr_pos) {
                 bool is_parsed = parser.Parse(buffer, curr_pos, parsed);
-                if (is_parsed){
+                if (is_parsed) {
                     size_t body_read = curr_pos - parsed;//body_read - сколько дочитали
                     memcpy(buffer, buffer + parsed, body_read);
                     memset(buffer + body_read, 0, parsed); // Убираем все, что было связано с командой.
@@ -239,22 +296,18 @@ void ServerImpl::RunConnection(int socket) {
                     //Сбор команды и аргументов
                     uint32_t body_size;
                     auto cmd = parser.Build(body_size);
-                    while (body_size > curr_pos){
-                        n_read = recv(socket, buffer + curr_pos, buf_size, 0);
-                        curr_pos += n_read;
-                        if (n_read < 0){
-                            throw std::runtime_error("\nUser disconnected\n");
-                        }
+                    if (body_size > curr_pos){
+                        break;
                     }
                     char args[body_size + 1];
                     memcpy(args, buffer, body_size);
                     args[body_size] = '\0';
 
                     // Запускаем
-                    try{
+                    try {
                         cmd->Execute(*pStorage, args, out);
                         out += "\r\n";
-                    }catch(std::runtime_error &err){ // Ошибка внутри поймается и отправится клиенту
+                    } catch (std::runtime_error &err) { // Ошибка внутри поймается и отправится клиенту
                         out = std::string("SERVER_ERROR : ") + err.what() + "\r\n";
                     }
 
@@ -267,155 +320,20 @@ void ServerImpl::RunConnection(int socket) {
                         throw std::runtime_error("Socket send() failed\n");
                     }
                     parser.Reset();
-                    }
-            }
-            throw std::runtime_error("User disconnected\n");
 
-        }
-        // Передана команда на остановку сервера. Что делаем?
-            /*// Loop for reading
-            n_read = 0;
-            std::cout << "Start of loop\n";
-            do {
-                parser.Reset(); // Сбросим парсер
-                std::cout << "IN recv()\n";
-                // Читаем, пока не начитаемся. Если сокет закрылся - выкинем.
-                std::cout << "recv()ed\n";
-                if (n_read < 0){
-                    throw std::runtime_error("\nUser disconnected\n");
-                }
-                curr_pos += n_read;
-                std::cout << "Pos = " << curr_pos << " data =[" << buffer <<"]\n";
-            } while (!parser.Parse(buffer, curr_pos, parsed) && (n_read = recv(socket, buffer + curr_pos, buf_size, 0)) > 0);
-            std::cout << "Curr nread " << n_read << std::endl;
-            if (n_read <= 0){
-                throw std::runtime_error("\nUser disconnected\n");
-            }
-            std::cout << "Parsed\n";
-            uint32_t body_size = 0;
-            size_t body_read = curr_pos - parsed;//body_read - сколько дочитали
-            auto cmd = parser.Build(body_size);// Узнали размер body, сделали команду
-            // Очистим все, что не нужно.
-            memcpy(buffer, buffer + parsed, body_read);
-            memset(buffer + body_read, 0, parsed); // Убираем все, что было связано с командой.
-
-            // Теперь работаем с аргументами
-            curr_pos = body_read;
-            while (body_size > curr_pos){
-                n_read = recv(socket, buffer + curr_pos, buf_size, 0);
-                curr_pos += n_read;
-                if (n_read < 0){
-                    throw std::runtime_error("\nUser disconnected\n");
                 }
             }
-            std::cout << "Got someBody\n";
-            // Допустим, прочитали. Теперь запустим.
-            char args[body_size + 1];
-            memcpy(args, buffer, body_size);
-            args[body_size] = '\0';
-            std::cout << "Executing\n";
-            cmd->Execute(*pStorage, args, out);
-            std::cout << "Executed\n";
-            out += "\r\n";
-            //Почистим память опять(остатки аргумента и \r\n
-            if (body_size) {
-                memcpy(buffer, buffer + body_size + 2, curr_pos - body_size - 2);
-                memset(buffer + curr_pos - body_size - 2, 0, body_size);
-                curr_pos -= body_size + 2;
-            }
+            out = std::string("SERVER_DISCONNECTING") + "\r\n";
             if (send(socket, out.data(), out.size(), 0) <= 0) {
-                throw std::runtime_error("Socket send() failed");
+                throw std::runtime_error("Socket send() failed\n");
             }
 
-            parser.Reset();
-            std::cout << "Sent\n";
-        }*/
-    /*}catch (std::runtime_error &err){
-        out = std::string("SERVER_ERROR : ") + err.what() + "\r\n";
-        close(socket);
-        std::cout << "\nDisconnecting...\n";
-        if (send(socket, out.data(), out.size(), 0) <= 0) {
-            throw std::runtime_error("Socket send() failed");
+        }else {
+            throw std::runtime_error("User disconnected\n");
         }
-    }*/
 
-        /*
-            try {
-                n_read = recv(socket, buffer, buf_size, 0); //Reading data
-                while(!parser.Parse(buffer, curr_pos, parsed)){
-                    std::cout <<"Didn't parse yet\n";
-                }
-            }catch (std::runtime_error &err){
 
-            }
-        }*/
-        /*while(running.load() && stable) {
-        try {
-            std::cout << "A\n";
-            n_read = recv(socket, buffer, buf_size, 0);
-            buffer[n_read]='\0';
-            std::cout << "READ "<< n_read <<" " << buffer << std::endl;
-            if (n_read == 0){
-                //close(socket);
-                throw std::runtime_error("Socket is closed");
-            }
-            std::string query; // Input parsed
-            if (n_read < 0){
-                close(socket);
-                throw std::runtime_error("Socket is closed");
-            }
-            query.append(buffer, n_read);
-            curr_pos += n_read;
-            std::cout << "B\n";
-            // Check if command is parsed
-            while(!parser.Parse(query.c_str(), curr_pos, parsed)) {
-                std::cout <<"C\n";
-                memset(buffer, 0, buf_size);
-                n_read = recv(socket, buffer, buf_size, 0);
-                if(n_read <= 0) {
-                    break;
-                }
-                query.append(buffer, n_read);
-                curr_pos += n_read;
-                parser.Reset();
-            }
-            //We parsed the command
-            uint32_t body_size;
-            auto cmd = parser.Build(body_size);
-            char cmdbuf[body_size+1];
-            std::string body = query.substr(parsed, n_read - parsed);
-            std::cout << "D\n";
-            if (body_size > 0 && (n_read = recv(socket, cmdbuf, body_size - body.size(), 0)) <= 0) {
-                throw std::runtime_error("Socket recv() failed");
-            }
-            cmdbuf[n_read]='\0';
-            std::cout << "BODY ["<<body<<"]"<<"\n";
-            std::cout << "BUF ["<<cmdbuf<<"]"<<n_read <<"\n";
-            body = body.append(cmdbuf,n_read);
-            try {
-                cmd->Execute(*pStorage, query.append(cmdbuf), out);
-                out += "\r\n";
-            } catch (std::runtime_error& e) {
-                out = std::string("SERVER_ERROR : ") + e.what() + "\r\n";
-            }
-            // Now we should leave in query variable the only data which is not used for query
-            query = query.substr(parsed, n_read - parsed);
 
-            parser.Reset();
-            memset(buffer,'\0',buf_size);
-            //
-        } catch (std::runtime_error &err) {
-            out = std::string("SERVER_ERROR : ") + err.what() + "\r\n";
-            stable = false;
-        }
-        if (send(socket, out.data(), out.size(), 0) <= 0) {
-            throw std::runtime_error("Socket send() failed");
-        }
-        std::cout <<"E\n";
-    }
-        std::cout << "Socket is empty. Disconnecting..." << std::endl;*/
-
-    // TODO: All connection work is here
 }
 
 } // namespace Blocking
