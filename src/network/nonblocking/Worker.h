@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <pthread.h>
+#include <atomic>
 
 namespace Afina {
 
@@ -42,15 +43,20 @@ public:
      * been destoryed
      */
     void Join();
+    static void *OnRunProxy(void*);
+    void SetGetRoutine(int, char*, int*);
 
 protected:
     /**
      * Method executing by background thread
      */
-    void OnRun(void *args);
+    void* OnRun(void *args);
 
 private:
+    std::shared_ptr<Afina::Storage> pStorage;
     pthread_t thread;
+    //std::atomic<bool> running;
+    int socket;
 };
 
 } // namespace NonBlocking
