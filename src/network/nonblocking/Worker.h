@@ -44,7 +44,7 @@ public:
      */
     void Join();
     static void *OnRunProxy(void*);
-    void SetGetRoutine(int, char*, int*);
+    static int AcquireConn(int,int);
 
 protected:
     /**

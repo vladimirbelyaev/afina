@@ -65,7 +65,7 @@ public:
 
     void MoveToHead(entry* value) const;
 
-    bool FreeCache(const size_t& input_size);
+    bool FreeCache(const int& input_size);
 
     size_t SizeOfNode(const std::string &key, const std::string &value, const bool type) const;
 

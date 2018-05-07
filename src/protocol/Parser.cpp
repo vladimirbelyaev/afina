@@ -11,6 +11,7 @@
 #include <afina/execute/Get.h>
 #include <afina/execute/Set.h>
 #include <afina/execute/Stats.h>
+#include <afina/execute/Replace.h>
 
 namespace Afina {
 namespace Protocol {
@@ -26,7 +27,7 @@ bool Parser::Parse(const char *input, const size_t size, size_t &parsed) {
         switch (state) {
         case State::sName: {
             if (c == ' ' || c == '\r'/* || c== '\n'*/) {
-                //std::cout << "parser debug: name='" << name << "'" << std::endl;
+                std::cout << "parser debug: name='" << name << "'" << std::endl;
                 if (name == "set" || name == "add" || name == "append" || name == "prepend") {
                     state = State::spKey;
                 } else if (name == "get" || name == "gets") {
@@ -38,7 +39,7 @@ bool Parser::Parse(const char *input, const size_t size, size_t &parsed) {
                     throw std::runtime_error("Unknown command name");
                 }
             } else {
-                //std::cout << "parser debug: name='" << name << "'" << std::endl;
+                std::cout << "parser debug: name='" << name << "'" << std::endl;
                 name.push_back(c);
             }
             break;
@@ -48,7 +49,7 @@ bool Parser::Parse(const char *input, const size_t size, size_t &parsed) {
             if (c == ' ') {
                 state = State::spFlags;
                 keys.push_back(curKey);
-                //std::cout << "parser debug: key[" << keys.size() - 1 << "]='" << curKey << "'" << std::endl;
+                std::cout << "parser debug: key[" << keys.size() - 1 << "]='" << curKey << "'" << std::endl;
             } else {
                 curKey.push_back(c);
             }
@@ -67,7 +68,7 @@ bool Parser::Parse(const char *input, const size_t size, size_t &parsed) {
                 curKey.clear();
                 state = State::sLF;
             } else if (c == ' ') {
-                //std::cout << "parser debug: key[" << keys.size() << "]='" << curKey << "'" << std::endl;
+                std::cout << "parser debug: key[" << keys.size() << "]='" << curKey << "'" << std::endl;
                 state = State::sgKey;
                 keys.push_back(curKey);
                 curKey.clear();
@@ -81,7 +82,7 @@ bool Parser::Parse(const char *input, const size_t size, size_t &parsed) {
             if (c == ' ') {
                 negative = false;
                 state = State::spExprTimeStart;
-                //std::cout << "parser debug: flags='" << flags << "'" << std::endl;
+                std::cout << "parser debug: flags='" << flags << "'" << std::endl;
             } else if (c >= '0' && c <= '9') {
                 uint32_t f = (flags * 10) + (c - '0');
                 if (f < flags) {
@@ -107,7 +108,7 @@ bool Parser::Parse(const char *input, const size_t size, size_t &parsed) {
         case State::spExprTime: {
             if (c == ' ') {
                 state = State::spBytes;
-                //std::cout << "parser debug: ExprTime='" << exprtime << "'" << std::endl;
+                std::cout << "parser debug: ExprTime='" << exprtime << "'" << std::endl;
             } else if (c >= '0' && c <= '9') {
                 int32_t et = exprtime;
                 if (negative) {
@@ -129,7 +130,7 @@ bool Parser::Parse(const char *input, const size_t size, size_t &parsed) {
         case State::spBytes: {
             if (c == '\r') {
                 state = State::sLF;
-                //std::cout << "parser debug: bytes='" << bytes << "'" << std::endl;
+                std::cout << "parser debug: bytes='" << bytes << "'" << std::endl;
             } else if (c >= '0' && c <= '9') {
                 uint32_t b = (bytes * 10) + (c - '0');
                 if (b < bytes) {
@@ -143,7 +144,7 @@ bool Parser::Parse(const char *input, const size_t size, size_t &parsed) {
 
         case State::sLF: {
             if (c == '\n') {
-                //std::cout << "Debug: parse completed\n";
+                std::cout << "Debug: parse completed\n";
                 parse_complete = true;
             } else {
                 std::stringstream err;
@@ -159,6 +160,7 @@ bool Parser::Parse(const char *input, const size_t size, size_t &parsed) {
     }
 
     parsed += pos;
+        std::cout << "At the end of parse key is " << state << std::endl;
     return parse_complete;
 }
 
@@ -179,6 +181,8 @@ std::unique_ptr<Execute::Command> Parser::Build(uint32_t &body_size) const {
         return std::unique_ptr<Execute::Command>(new Execute::Get(keys));
     } else if (name == "stats") {
         return std::unique_ptr<Execute::Command>(new Execute::Stats());
+    } else if (name == "replace") {
+        return std::unique_ptr<Execute::Command>(new Execute::Replace(keys[0], flags, exprtime));
     } else {
         throw std::runtime_error("Unsupported command");
     }

@@ -37,8 +37,12 @@ bool MapBasedGlobalLockImpl::CheckListChain() const{
 
 }
 
-bool MapBasedGlobalLockImpl::FreeCache(const size_t& input_size){
+bool MapBasedGlobalLockImpl::FreeCache(const int& input_size){
     std::lock_guard<std::recursive_mutex> lk(m);
+    if(input_size < 0){
+        _curr_size -= input_size;
+        return true;
+    }
     if(input_size > _max_size)
         return false;
     while(_curr_size + input_size > _max_size){
