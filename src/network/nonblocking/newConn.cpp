@@ -27,7 +27,7 @@ namespace Afina {
             newConn::~newConn(){}
 
             void newConn::routine() {
-                std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
+                //std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
                 auto buf_size = 1024;
                 char buffer[buf_size];
                 std::string out;
@@ -39,7 +39,9 @@ namespace Afina {
 
 
                 // Делать 2 recv бессмысленно, мы ж nonblocking. Раз прочитали, запомнили состояние.
+                //std::cout << "Before recv\n";
                 n_read = recv(socket, buffer + curr_pos, buf_size - curr_pos, 0);
+                //std::cout << "N_read " << n_read << std::endl;
                 if (n_read == 0){
                     close(socket);
                     throw std::runtime_error("User respectively disconnected");
@@ -57,7 +59,17 @@ namespace Afina {
 
 
                 while (parsed < curr_pos) {
-                    is_parsed = parser.Parse(buffer, curr_pos, parsed);
+
+                    try {
+                        is_parsed = parser.Parse(buffer, curr_pos, parsed);
+                    }catch (std::runtime_error &err) { // Ошибка внутри поймается и отправится клиенту
+                        out = std::string("SERVER_ERROR : ") + err.what() + "\r\n";
+                        if (send(socket, out.data(), out.size(), 0) <= 0) {
+                            throw std::runtime_error("Socket send() failed\n");
+                        }
+                        return;
+                    }
+                    //is_parsed = parser.Parse(buffer, curr_pos, parsed);
                     if (is_parsed) {
                         size_t body_read = curr_pos - parsed;//body_read - сколько дочитали
                         memcpy(buffer, buffer + parsed, body_read);
@@ -90,6 +102,9 @@ namespace Afina {
                             is_parsed = false;
                         }
                     }
+
+
+
                 }
 
             }

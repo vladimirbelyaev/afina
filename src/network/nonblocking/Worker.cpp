@@ -85,16 +85,19 @@ void* Worker::OnRun(void *args) {
         }
         socket = *reinterpret_cast<int*>(args);
         ev.data.fd = socket;
-        //std::cout << "Socket in onrun is " << socket << "\n";
         ev.events = EPOLLEXCLUSIVE | EPOLLIN | EPOLLHUP | EPOLLERR;
         res = epoll_ctl(efd, EPOLL_CTL_ADD, ev.data.fd, &ev);
         if (res == -1) {
             throw std::runtime_error("epoll ctl");
         }
-
-        //std::cout << efd <<" in OnRun pStorage is " << pStorage.get()  << std::endl;
         std::cout << "Connected epoll " << efd <<  " to server socket " << socket << std::endl;
+        long counter = 0;
+
+
+
         while(1){
+            //sleep(1);
+            std::cerr << "THERE WERE " << counter << " READS ON EPOLL " << efd << std::endl;
             std::cout << "In OnRun infinity loop pStorage is " << pStorage.get() << " efd " << efd << " socket " << socket << std::endl;
             if ((events_catched = epoll_wait(efd, events, MAXEVENTS, -1)) == -1) {
                 if(errno == EINTR)
@@ -103,14 +106,10 @@ void* Worker::OnRun(void *args) {
                 }
                 throw std::runtime_error("epoll wait");
             }
-            /*std::cout << "SOME EVENTS CATCHED: "<< events_catched <<"\n";
-            std::cout << "Epollerr " << EPOLLERR << std::endl;
-            std::cout << "Epollhup " << EPOLLHUP << std::endl;
-            std::cout << "Epollin " << EPOLLIN << std::endl;*/
+            //std::cout << "SOME EVENTS CATCHED: "<< events_catched <<"\n";
             for (int i = 0; i < events_catched; i++) {
-                //std::cout << "In OnRun events pStorage is " << pStorage.get() << std::endl;
-                std::cout << "Event " << events[i].events << std::endl;
-                if ((events[i].events & EPOLLERR) || (events[i].events & EPOLLHUP) || (!(events[i].events & EPOLLIN))) {
+                if ((events[i].events & EPOLLERR) || (events[i].events & EPOLLHUP) ||
+                        (!(events[i].events & EPOLLIN) && !(events[i].events & EPOLLOUT))) {
                     /* An error has occured on this fd, or the socket is not
                        ready for reading (why were we notified then?) */
                     std::cout << "User on socket " << events[i].data.fd << " disconnected\n";
@@ -124,7 +123,6 @@ void* Worker::OnRun(void *args) {
                        means one or more incoming connections. */
                     while (1) {
                         try {
-                            //std::cout << "In OnRun Acquire pStorage is " << pStorage.get() << std::endl;
                             infd = AcquireConn(efd, socket);
                         }catch(std::runtime_error &err){
                             std::cout << "Error: " << err.what() << std::endl;
@@ -132,22 +130,20 @@ void* Worker::OnRun(void *args) {
                         if (infd < 0){ // All new connections acquired
                             break;
                         }
-                        //std::cout << "Curr pStorage is " << pStorage.get() << std::endl;
                         fd_conns[infd] = newConn(pStorage, infd);
                     }
                     continue;
+
+
+
                 } else { // We've got some new data. Process it, bitch!
-                    std::cout << "Some data on fd " << events[i].data.fd << " in efd " << efd << std::endl;
                     try {
-                        /*
-                        SetGetRoutine(events[i].data.fd, fd_data[events[i].data.fd], &fd_len[events[i].data.fd]);
-                        std::cout << "Unparsed data [" << fd_data[events[i].data.fd] << "]\n";
-                         */
                         fd_conns[events[i].data.fd].routine();
                     }catch (std::runtime_error &err){
                         std::cout << err.what() << "- error on fd " << events[i].data.fd << std::endl;
                         continue;
                     }
+                    counter++;
                     continue;
                     //close(events[i].data.fd);
                 }
@@ -190,7 +186,8 @@ int Worker::AcquireConn(int efd, int socket){
         abort();
     struct epoll_event ev;
     ev.data.fd = infd;
-    ev.events = EPOLLIN | EPOLLET;
+    //ev.events = EPOLLIN | EPOLLET;
+    ev.events = EPOLLERR | EPOLLHUP | EPOLLIN | EPOLLOUT;
     s = epoll_ctl(efd, EPOLL_CTL_ADD, infd, &ev);
     if (s == -1) {
         throw std::runtime_error("epoll_ctl");
