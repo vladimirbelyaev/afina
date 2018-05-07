@@ -59,7 +59,6 @@ namespace Afina {
 
 
                 while (parsed < curr_pos) {
-
                     try {
                         is_parsed = parser.Parse(buffer, curr_pos, parsed);
                     }catch (std::runtime_error &err) { // Ошибка внутри поймается и отправится клиенту
@@ -100,6 +99,9 @@ namespace Afina {
                             }
                             parser.Reset();
                             is_parsed = false;
+                            std::cout << "IN DATA LEFT: [" << buffer << "]\n";
+                            std::cout << "PARSED: "<< parsed << "CURR_POS: " << curr_pos << std::endl;
+                            parsed = 0;
                         }
                     }
 
