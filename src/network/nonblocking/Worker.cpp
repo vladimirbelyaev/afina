@@ -152,8 +152,9 @@ void* Worker::OnRun(void *args) {
             }
         }
         // Server is stopping. We should proceed the last data, send users message about stopping and then close all connections
-        std::cerr << "STOPPING: THERE WERE " << counter << " READS ON EPOLL " << efd << std::endl;
+        //std::cerr << "STOPPING: THERE WERE " << counter << " READS ON EPOLL " << efd << std::endl;
         std::cout << "In OnRun infinity loop pStorage is " << pStorage.get() << " efd " << efd << " socket " << socket << std::endl;
+        std::cout << "There are "<< fd_conns.size() <<" connections to be closed" << std::endl;
         for (auto &conn : fd_conns){
             std::cout << "Closing conn on fd " << conn.first << std::endl;
             conn.second.cState = newConn::State::kStopping;

@@ -55,6 +55,7 @@ namespace Afina {
                                 throw std::runtime_error("Socket send() failed\n");
                             }
                             close(socket);
+                            std::cout << "Socket closed via server stop\n";
                             return;
                         }
                         return;
