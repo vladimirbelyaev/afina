@@ -48,6 +48,15 @@ namespace Afina {
                 }
                 if (n_read == -1){
                     if (errno == EAGAIN || errno == EWOULDBLOCK){ // In data ended.
+                        if (cState == State::kStopping){
+                            std::cout << "Closing connection via server stop\n";
+                            out = "Server is shutting down. Connection is closing\n";
+                            if (send(socket, out.data(), out.size(), 0) <= 0) {
+                                throw std::runtime_error("Socket send() failed\n");
+                            }
+                            close(socket);
+                            return;
+                        }
                         return;
                     }else{
                         close(socket);
@@ -109,7 +118,8 @@ namespace Afina {
 
                 }
                 if (cState == State::kStopping){
-                    out = "Server is shutting down. Connection is closing";
+                    std::cout << "Closing connection via server stop\n";
+                    out = "Server is shutting down. Connection is closing\n";
                     if (send(socket, out.data(), out.size(), 0) <= 0) {
                         throw std::runtime_error("Socket send() failed\n");
                     }

@@ -61,7 +61,7 @@ void Worker::Start(int server_socket) {
 // See Worker.h
 void Worker::Stop() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
-    //*running = false;
+    *running = false;
 }
 
 // See Worker.h
@@ -98,8 +98,8 @@ void* Worker::OnRun(void *args) {
 
         while(*running){
             //sleep(1);
-            std::cerr << "THERE WERE " << counter << " READS ON EPOLL " << efd << std::endl;
-            std::cout << "In OnRun infinity loop pStorage is " << pStorage.get() << " efd " << efd << " socket " << socket << std::endl;
+            //std::cerr << "THERE WERE " << counter << " READS ON EPOLL " << efd << std::endl;
+            //std::cout << "In OnRun infinity loop pStorage is " << pStorage.get() << " efd " << efd << " socket " << socket << std::endl;
             if ((events_catched = epoll_wait(efd, events, MAXEVENTS, -1)) == -1) {
                 if(errno == EINTR)
                 {
@@ -144,7 +144,7 @@ void* Worker::OnRun(void *args) {
                         std::cout << err.what() << "- error on fd " << events[i].data.fd << std::endl;
                         continue;
                     }
-                    counter++;
+                    //counter++;
                     continue;
                     //close(events[i].data.fd);
                 }
@@ -155,7 +155,9 @@ void* Worker::OnRun(void *args) {
         std::cerr << "STOPPING: THERE WERE " << counter << " READS ON EPOLL " << efd << std::endl;
         std::cout << "In OnRun infinity loop pStorage is " << pStorage.get() << " efd " << efd << " socket " << socket << std::endl;
         for (auto &conn : fd_conns){
+            std::cout << "Closing conn on fd " << conn.first << std::endl;
             conn.second.cState = newConn::State::kStopping;
+            conn.second.routine();
             fd_conns.erase(conn.first);
         }
 
