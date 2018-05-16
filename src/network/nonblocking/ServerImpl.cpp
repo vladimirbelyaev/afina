@@ -24,7 +24,9 @@ namespace Network {
 namespace NonBlocking {
 
 // See Server.h
-ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps) : Server(ps) {}
+ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps) : Server(ps) {
+        running = std::make_shared<bool>();
+    }
 
 // See Server.h
 ServerImpl::~ServerImpl() {}
@@ -73,8 +75,9 @@ void ServerImpl::Start(uint32_t port, uint16_t n_workers) {
         throw std::runtime_error("Socket listen() failed");
     }
     std::cout << "Before start socket is " << server_socket << "\n";
+    *running = true;
     for (int i = 0; i < n_workers; i++) {
-        workers.emplace_back(pStorage);
+        workers.emplace_back(pStorage,running);
         workers.back().Start(server_socket);
     }
 }
@@ -82,6 +85,7 @@ void ServerImpl::Start(uint32_t port, uint16_t n_workers) {
 // See Server.h
 void ServerImpl::Stop() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
+    *running = false;
     for (auto &worker : workers) {
         worker.Stop();
     }

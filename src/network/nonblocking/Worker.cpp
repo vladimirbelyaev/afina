@@ -22,7 +22,8 @@ namespace Network {
 namespace NonBlocking {
 
 // See Worker.h
-Worker::Worker(std::shared_ptr<Afina::Storage> ps): pStorage(ps) {
+Worker::Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<bool> run): pStorage(ps) {
+        running = std::move(run);
         std::cout << "Init pStorage in Worker at ptr " << ps.get() << std::endl;
 }
 
@@ -60,7 +61,7 @@ void Worker::Start(int server_socket) {
 // See Worker.h
 void Worker::Stop() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
-    //running.store(false);
+    //*running = false;
 }
 
 // See Worker.h
@@ -95,7 +96,7 @@ void* Worker::OnRun(void *args) {
 
 
 
-        while(1){
+        while(*running){
             //sleep(1);
             std::cerr << "THERE WERE " << counter << " READS ON EPOLL " << efd << std::endl;
             std::cout << "In OnRun infinity loop pStorage is " << pStorage.get() << " efd " << efd << " socket " << socket << std::endl;
@@ -149,6 +150,13 @@ void* Worker::OnRun(void *args) {
                 }
 
             }
+        }
+        // Server is stopping. We should proceed the last data, send users message about stopping and then close all connections
+        std::cerr << "STOPPING: THERE WERE " << counter << " READS ON EPOLL " << efd << std::endl;
+        std::cout << "In OnRun infinity loop pStorage is " << pStorage.get() << " efd " << efd << " socket " << socket << std::endl;
+        for (auto &conn : fd_conns){
+            conn.second.cState = newConn::State::kStopping;
+            fd_conns.erase(conn.first);
         }
 
     }

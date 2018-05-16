@@ -20,7 +20,7 @@ namespace NonBlocking {
  */
 class Worker {
 public:
-    Worker(std::shared_ptr<Afina::Storage> ps);
+    Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<bool> run);
     ~Worker();
 
     /**
@@ -55,7 +55,8 @@ protected:
 private:
     std::shared_ptr<Afina::Storage> pStorage;
     pthread_t thread;
-    //std::atomic<bool> running;
+    std::shared_ptr<bool> running;
+    //std::atomic<bool> test_variable;
     int socket;
 };
 

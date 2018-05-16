@@ -108,7 +108,13 @@ namespace Afina {
 
 
                 }
-
+                if (cState == State::kStopping){
+                    out = "Server is shutting down. Connection is closing";
+                    if (send(socket, out.data(), out.size(), 0) <= 0) {
+                        throw std::runtime_error("Socket send() failed\n");
+                    }
+                    close(socket);
+                }
             }
         }//Nonblocking
     }//Network

@@ -14,6 +14,7 @@ namespace Afina {
     namespace Network {
         namespace NonBlocking {
             class newConn {
+            public:
                 enum class State {
                     // Connection is fully operational, tasks could be added and get executed
                             kRun,
@@ -25,15 +26,14 @@ namespace Afina {
                     // Connection is stopped
                             kStopped
                 };
-            public:
                 newConn();
                 newConn(std::shared_ptr<Afina::Storage> ps, int sock);
                 ~newConn();
                 void routine();
+                State cState = State::kRun;
             private:
                 std::shared_ptr<Afina::Storage> pStorage;
                 Protocol::Parser parser;
-                State cState = State::kRun;
                 int socket;
                 bool is_parsed = false;
             };
