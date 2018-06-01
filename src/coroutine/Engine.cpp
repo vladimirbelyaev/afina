@@ -8,32 +8,31 @@ namespace Afina {
 namespace Coroutine {
     void Engine::Store(context &ctx) {
         char stack;
-        ctx.Low = &stack;
-        ctx.High = StackBottom;
-
-        uint32_t stack_size = ctx.High - ctx.Low;
-        if(stack_size < 0){
-            auto tmp = ctx.Low;
-            ctx.Low = ctx.High;
-            ctx.High = tmp;
-            stack_size *= -1;
+        ctx.Low = ctx.High = StackBottom;
+        if (ctx.Low > &stack){
+            ctx.Low = &stack;
+        }else{
+            ctx.High = &stack;
         }
-        delete [] std::get<0>(ctx.Stack);
-        std::get<0>(ctx.Stack) = new char[stack_size];
-        std::get<1>(ctx.Stack) = stack_size;
-
+        uint32_t stack_size = ctx.High - ctx.Low;
+        if (stack_size > std::get<1>(ctx.Stack)) {
+            delete[] std::get<0>(ctx.Stack);
+            std::get<0>(ctx.Stack) = new char[stack_size];
+            std::get<1>(ctx.Stack) = stack_size;
+        }
         memcpy(std::get<0>(ctx.Stack), ctx.Low, stack_size);
     }
 
     void Engine::Restore(context &ctx) {
         char stack;
-        if (&stack >= ctx.Low) {
+        if ((&stack >= ctx.Low) && (&stack <= ctx.High)){
             Restore(ctx);
         }
 
         memcpy(ctx.Low, std::get<0>(ctx.Stack), std::get<1>(ctx.Stack));
         longjmp(ctx.Environment, 1);
     }
+
 
     void Engine::yield() {
         context* routine = alive;
